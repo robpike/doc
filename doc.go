@@ -4,9 +4,16 @@
 
 // Doc is a simple document printer that produces the doc comments
 // for its argument symbols, using a more Go-like UI than godoc.
-// It can also search for symbols by looking in all packages, for instance:
+// It can also search for symbols by looking in all packages, and
+// case is ignored. For instance:
 //	doc isupper
 // will find unicode.IsUpper.
+//
+// usage:
+//	doc pkg.name   # "doc io.Writer"
+//	doc pkg name   # "doc fmt Printf"
+//	doc name       # "doc isupper" (finds unicode.IsUpper)
+//
 package main
 
 import (
