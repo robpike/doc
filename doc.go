@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -71,12 +72,7 @@ func split(arg string) (pkg, name string) {
 }
 
 func paths(pkg string) []string {
-	goroot := os.Getenv("GOROOT")
-	if goroot == "" {
-		fmt.Fprintf(os.Stderr, "doc: $GOROOT not set\n")
-		os.Exit(2)
-	}
-	pkgs := pathsFor(goroot, pkg)
+	pkgs := pathsFor(runtime.GOROOT(), pkg)
 	gopath := os.Getenv("GOPATH")
 	if gopath != "" {
 		for _, root := range splitGopath(gopath) {
