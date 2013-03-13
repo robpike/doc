@@ -30,9 +30,9 @@ import (
 
 const usageDoc = `Find documentation for names.
 usage:
-	doc pkg.name   # doc io.Writer
-	doc pkg name   # doc fmt Printf
-	doc name       # doc isupper: finds unicode.IsUpper
+	doc pkg.name   # "doc io.Writer"
+	doc pkg name   # "doc fmt Printf"
+	doc name       # "doc isupper" finds unicode.IsUpper
 pkg is the last component of any package, e.g. fmt, parser
 name is the name of an exported symbol; case is ignored in matches.
 `
