@@ -7,7 +7,6 @@
 // It can also search for symbols by looking in all packages, for instance:
 //	doc isupper
 // will find unicode.IsUpper.
-
 package main
 
 import (
