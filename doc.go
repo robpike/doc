@@ -14,7 +14,8 @@
 //	doc pkg name   # "doc fmt Printf"
 //	doc name       # "doc isupper" (finds unicode.IsUpper)
 //
-// The pkg is the last name of the package; no slashes (ast.Node not go/ast.Node).
+// The pkg is the last element of the package path;
+// no slashes (ast.Node not go/ast.Node).
 //
 package main
 
