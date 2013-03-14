@@ -95,6 +95,8 @@ func splitGopath(gopath string) []string {
 	return strings.Split(gopath, string(os.PathListSeparator))
 }
 
+var slashDot = string(filepath.Separator) + "."
+
 // pathsFor recursively walks the tree looking for possible directories for the package:
 // those whose basename is pkg.
 func pathsFor(root, pkg string) []string {
@@ -109,7 +111,7 @@ func pathsFor(root, pkg string) []string {
 			return nil
 		}
 		// No .hg or other dot nonsense please.
-		if strings.Contains(pathName, "/.") { // TODO: Unix-specific?
+		if strings.Contains(pathName, slashDot) {
 			return filepath.SkipDir
 		}
 		// Is the last element of the path correct
