@@ -9,10 +9,12 @@
 //	doc isupper
 // will find unicode.IsUpper.
 //
-// usage:
+// Usage:
 //	doc pkg.name   # "doc io.Writer"
 //	doc pkg name   # "doc fmt Printf"
 //	doc name       # "doc isupper" (finds unicode.IsUpper)
+//
+// The pkg is the last name of the package; no slashes (ast.Node not go/ast.Node).
 //
 package main
 
