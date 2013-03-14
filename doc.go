@@ -9,10 +9,13 @@
 //	doc isupper
 // will find unicode.IsUpper.
 //
+// The -pkg flag retrieves package-level doc comments only.
+//
 // Usage:
 //	doc pkg.name   # "doc io.Writer"
 //	doc pkg name   # "doc fmt Printf"
 //	doc name       # "doc isupper" (finds unicode.IsUpper)
+//	doc -pkg pkg   # "doc fmt"
 //
 // The pkg is the last element of the package path;
 // no slashes (ast.Node not go/ast.Node).
@@ -43,6 +46,7 @@ usage:
 	doc pkg.name   # "doc io.Writer"
 	doc pkg name   # "doc fmt Printf"
 	doc name       # "doc isupper" finds unicode.IsUpper
+	doc -pkg pkg   # "doc fmt"
 pkg is the last component of any package, e.g. fmt, parser
 name is the name of an exported symbol; case is ignored in matches.
 `
@@ -52,17 +56,24 @@ func usage() {
 	os.Exit(2)
 }
 
+var pkgFlag = flag.Bool("pkg", false, "show top-level package doc only")
+
 func main() {
 	flag.Parse()
 	var pkg, name string
 	switch flag.NArg() {
 	case 1:
-		if strings.Contains(flag.Arg(0), ".") {
+		if *pkgFlag {
+			pkg = flag.Arg(0)
+		} else if strings.Contains(flag.Arg(0), ".") {
 			pkg, name = split(flag.Arg(0))
 		} else {
 			name = flag.Arg(0)
 		}
 	case 2:
+		if *pkgFlag {
+			usage()
+		}
 		pkg, name = flag.Arg(0), flag.Arg(1)
 	default:
 		usage()
@@ -197,7 +208,11 @@ func doPackage(fileNames []string, ident string) {
 		astFiles = append(astFiles, parsedFile)
 	}
 	for _, file := range files {
-		ast.Walk(file, file.file)
+		if *pkgFlag {
+			file.pkgComments()
+		} else {
+			ast.Walk(file, file.file)
+		}
 	}
 }
 
@@ -251,4 +266,13 @@ func (f *File) printNode(node ast.Node, comments *ast.CommentGroup) {
 	printer.Fprint(&b, f.fset, &commentedNode)
 	posn := f.fset.Position(node.Pos())
 	fmt.Printf("%s:%d:\n%s\n\n", posn.Filename, posn.Line, b.Bytes())
+}
+
+func (f *File) pkgComments() {
+	doc := f.file.Doc
+	if doc == nil {
+		return
+	}
+	posn := f.fset.Position(doc.Pos())
+	fmt.Printf("%s:%d:\npackage %s\n%s\n\n", posn.Filename, posn.Line, f.file.Name.Name, doc.Text())
 }
