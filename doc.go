@@ -139,6 +139,7 @@ func main() {
 var slash = string(filepath.Separator)
 var slashDot = string(filepath.Separator) + "."
 var goRootSrcPkg = filepath.Join(runtime.GOROOT(), "src", "pkg")
+var goRootSrcCmd = filepath.Join(runtime.GOROOT(), "src", "cmd")
 var goPaths = splitGopath()
 
 func split(arg string) (pkg, name string) {
@@ -256,9 +257,15 @@ func doPackage(fileNames []string, ident string) {
 			// fmt.Fprintf(os.Stderr, "%s: %s", name, err)
 			return
 		}
-		urlPrefix := "http://golang.org/pkg"
-		pathPrefix := goRootSrcPkg
-		if !strings.HasPrefix(name, goRootSrcPkg) {
+		var urlPrefix, pathPrefix string
+		switch {
+		case strings.HasPrefix(name, goRootSrcPkg):
+			urlPrefix = "http://golang.org/pkg"
+			pathPrefix = goRootSrcPkg
+		case strings.HasPrefix(name, goRootSrcCmd):
+			urlPrefix = "http://golang.org/cmd"
+			pathPrefix = goRootSrcCmd
+		default:
 			urlPrefix = "http://godoc.org"
 			for _, path := range goPaths {
 				p := filepath.Join(path, "src")
@@ -304,7 +311,7 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 					}
 					for _, ident := range spec.Names {
 						if equal(ident.Name, f.ident) {
-							f.printNode(n, n.Doc, f.nameURL(tag))
+							f.printNode(n, ident, f.nameURL(tag))
 							break
 						}
 					}
@@ -312,17 +319,17 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			case *ast.TypeSpec:
 				if equal(spec.Name.Name, f.ident) {
 					if *typeFlag {
-						f.printNode(spec, spec.Doc, f.nameURL(spec.Name.Name))
+						f.printNode(spec, spec.Name, f.nameURL(spec.Name.Name))
 						break
 					}
 					switch spec.Type.(type) {
 					case *ast.InterfaceType:
 						if *interfaceFlag {
-							f.printNode(spec, spec.Doc, f.nameURL(spec.Name.Name))
+							f.printNode(spec, spec.Name, f.nameURL(spec.Name.Name))
 						}
 					case *ast.StructType:
 						if *structFlag {
-							f.printNode(spec, spec.Doc, f.nameURL(spec.Name.Name))
+							f.printNode(spec, spec.Name, f.nameURL(spec.Name.Name))
 						}
 					}
 				}
@@ -335,9 +342,9 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 		if equal(n.Name.Name, f.ident) {
 			n.Body = nil // Do not print the function body.
 			if *methodFlag && n.Recv != nil {
-				f.printNode(n, n.Doc, f.methodURL(n.Recv.List[0].Type, n.Name.Name))
+				f.printNode(n, n.Name, f.methodURL(n.Recv.List[0].Type, n.Name.Name))
 			} else if *functionFlag && n.Recv == nil {
-				f.printNode(n, n.Doc, f.nameURL(n.Name.Name))
+				f.printNode(n, n.Name, f.nameURL(n.Name.Name))
 			}
 		}
 	}
@@ -353,17 +360,17 @@ func equal(n1, n2 string) bool {
 	return strings.ToLower(n1) == strings.ToLower(n2)
 }
 
-func (f *File) printNode(node ast.Node, comments *ast.CommentGroup, url string) {
-	fmt.Printf("%s%s%s", url, f.sourcePos(f.fset.Position(node.Pos())), f.docs(node, comments))
+func (f *File) printNode(node, ident ast.Node, url string) {
+	fmt.Printf("%s%s%s", url, f.sourcePos(f.fset.Position(ident.Pos())), f.docs(node))
 }
 
-func (f *File) docs(node ast.Node, comments *ast.CommentGroup) []byte {
+func (f *File) docs(node ast.Node) []byte {
 	if !*docFlag {
 		return nil
 	}
 	commentedNode := printer.CommentedNode{Node: node}
-	if comments != nil {
-		commentedNode.Comments = []*ast.CommentGroup{comments}
+	if comments := f.comments.Filter(node).Comments(); comments != nil {
+		commentedNode.Comments = comments
 	}
 	var b bytes.Buffer
 	printer.Fprint(&b, f.fset, &commentedNode)
