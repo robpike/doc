@@ -49,6 +49,8 @@ usage:
 	doc -pkg pkg   # "doc fmt"
 pkg is the last component of any package, e.g. fmt, parser
 name is the name of an exported symbol; case is ignored in matches.
+Flags -c(onst) -f(unc) -m(ethod) -t(ype) -v(ar) restrict hits to declarations
+of the corresponding kind.
 `
 
 func usage() {
@@ -56,14 +58,38 @@ func usage() {
 	os.Exit(2)
 }
 
-var pkgFlag = flag.Bool("pkg", false, "show top-level package doc only")
+var (
+	constantFlag = flag.Bool("const", false, "show doc for consts only")
+	functionFlag = flag.Bool("func", false, "show doc for funcs only")
+	methodFlag   = flag.Bool("method", false, "show doc for methods only")
+	packageFlag  = flag.Bool("package", false, "show top-level package doc only")
+	typeFlag     = flag.Bool("type", false, "show doc for types only")
+	variableFlag = flag.Bool("var", false, "show  doc for vars only")
+)
+
+func init() {
+	flag.BoolVar(constantFlag, "c", false, "alias for -const")
+	flag.BoolVar(functionFlag, "f", false, "alias for -func")
+	flag.BoolVar(methodFlag, "m", false, "alias for -method")
+	flag.BoolVar(packageFlag, "pkg", false, "alias for -package")
+	flag.BoolVar(typeFlag, "t", false, "alias for -type")
+	flag.BoolVar(variableFlag, "v", false, "alias for -var")
+}
 
 func main() {
 	flag.Parse()
+	if !(*constantFlag || *functionFlag || *methodFlag || *packageFlag || *typeFlag || *variableFlag) { // none set
+		*constantFlag = true
+		*functionFlag = true
+		*methodFlag = true
+		// Not package! It's special.
+		*typeFlag = true
+		*variableFlag = true
+	}
 	var pkg, name string
 	switch flag.NArg() {
 	case 1:
-		if *pkgFlag {
+		if *packageFlag {
 			pkg = flag.Arg(0)
 		} else if strings.Contains(flag.Arg(0), ".") {
 			pkg, name = split(flag.Arg(0))
@@ -71,7 +97,7 @@ func main() {
 			name = flag.Arg(0)
 		}
 	case 2:
-		if *pkgFlag {
+		if *packageFlag {
 			usage()
 		}
 		pkg, name = flag.Arg(0), flag.Arg(1)
@@ -208,7 +234,7 @@ func doPackage(fileNames []string, ident string) {
 		astFiles = append(astFiles, parsedFile)
 	}
 	for _, file := range files {
-		if *pkgFlag {
+		if *packageFlag {
 			file.pkgComments()
 		} else {
 			ast.Walk(file, file.file)
@@ -224,14 +250,16 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 		for _, spec := range n.Specs {
 			switch spec := spec.(type) {
 			case *ast.ValueSpec:
-				for _, ident := range spec.Names {
-					if equal(ident.Name, f.ident) {
-						f.printNode(n, n.Doc)
-						break
+				if *constantFlag && n.Tok == token.CONST || *variableFlag && n.Tok == token.VAR {
+					for _, ident := range spec.Names {
+						if equal(ident.Name, f.ident) {
+							f.printNode(n, n.Doc)
+							break
+						}
 					}
 				}
 			case *ast.TypeSpec:
-				if equal(spec.Name.Name, f.ident) {
+				if *typeFlag && equal(spec.Name.Name, f.ident) {
 					f.printNode(n, n.Doc)
 				}
 			case *ast.ImportSpec:
@@ -241,8 +269,10 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 	case *ast.FuncDecl:
 		// Methods, top-level functions.
 		if equal(n.Name.Name, f.ident) {
-			n.Body = nil // Do not print the function body.
-			f.printNode(n, n.Doc)
+			if *methodFlag && n.Recv != nil || *functionFlag && n.Recv == nil {
+				n.Body = nil // Do not print the function body.
+				f.printNode(n, n.Doc)
+			}
 		}
 	}
 	return f
