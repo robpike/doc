@@ -20,6 +20,10 @@
 // The pkg is the last element of the package path;
 // no slashes (ast.Node not go/ast.Node).
 //
+// Flags
+//	-c(onst) -f(unc) -i(nterface) -m(ethod) -s(truct) -t(ype) -v(ar)
+// restrict hits to declarations
+// of the corresponding kind.
 package main
 
 import (
@@ -50,7 +54,7 @@ usage:
 pkg is the last component of any package, e.g. fmt, parser
 name is the name of an exported symbol; case is ignored in matches.
 Flags
-	-c(onst) -f(unc) -i(nterface)-m(ethod) -s(truct) -t(ype) -v(ar)
+	-c(onst) -f(unc) -i(nterface) -m(ethod) -s(truct) -t(ype) -v(ar)
 restrict hits to declarations
 of the corresponding kind.
 `
