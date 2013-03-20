@@ -376,7 +376,15 @@ func (f *File) pkgComments() {
 	if doc == nil {
 		return
 	}
-	fmt.Printf("%spackage %s\n%s\n\n", f.packageURL(), f.sourcePos(f.fset.Position(doc.Pos())), f.file.Name.Name, doc.Text())
+	url := ""
+	if *urlFlag {
+		url = f.packageURL() + "\n"
+	}
+	docText := ""
+	if *docFlag {
+		docText = fmt.Sprintf("package %s\n%s\n\n", f.file.Name.Name, doc.Text())
+	}
+	fmt.Printf("%s%s%s", url, f.sourcePos(f.fset.Position(doc.Pos())), docText)
 }
 
 func (f *File) packageURL() string {
