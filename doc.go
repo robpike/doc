@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Doc is a simple document printer that produces the doc comments
-// for its argument symbols, using a more Go-like UI than godoc.
-// It can also search for symbols by looking in all packages, and
-// case is ignored. For instance:
+// Doc is a simple document printer that produces the doc comments for its
+// argument symbols, plus a link to the full documentation and a pointer to
+// the source. It has a more Go-like UI than godoc. It can also search for
+// symbols by looking in all packages, and case is ignored. For instance:
 //	doc isupper
 // will find unicode.IsUpper.
 //
@@ -22,8 +22,10 @@
 //
 // Flags
 //	-c(onst) -f(unc) -i(nterface) -m(ethod) -s(truct) -t(ype) -v(ar)
-// restrict hits to declarations
-// of the corresponding kind.
+// restrict hits to declarations of the corresponding kind.
+// Flags
+//	-doc -src -url
+// restrict printing to the documentation, source path, or godoc URL.
 package main
 
 import (
@@ -55,8 +57,10 @@ pkg is the last component of any package, e.g. fmt, parser
 name is the name of an exported symbol; case is ignored in matches.
 Flags
 	-c(onst) -f(unc) -i(nterface) -m(ethod) -s(truct) -t(ype) -v(ar)
-restrict hits to declarations
-of the corresponding kind.
+restrict hits to declarations of the corresponding kind.
+Flags
+	-doc -src -url
+restrict printing to the documentation, source path, or godoc URL.
 `
 
 func usage() {
@@ -65,6 +69,7 @@ func usage() {
 }
 
 var (
+	// If none is set, all are set.
 	constantFlag  = flag.Bool("const", false, "show doc for consts only")
 	functionFlag  = flag.Bool("func", false, "show doc for funcs only")
 	interfaceFlag = flag.Bool("interface", false, "show doc for interfaces only")
@@ -73,6 +78,13 @@ var (
 	structFlag    = flag.Bool("struct", false, "show doc for structs only")
 	typeFlag      = flag.Bool("type", false, "show doc for types only")
 	variableFlag  = flag.Bool("var", false, "show  doc for vars only")
+)
+
+var (
+	// If none is set, all are set.
+	docFlag = flag.Bool("doc", false, "restrict output to documentation only")
+	srcFlag = flag.Bool("src", false, "restrict output to source file only")
+	urlFlag = flag.Bool("url", false, "restrict output to godoc URL only")
 )
 
 func init() {
@@ -95,6 +107,11 @@ func main() {
 		// Not package! It's special.
 		*typeFlag = true
 		*variableFlag = true
+	}
+	if !(*docFlag || *srcFlag || *urlFlag) {
+		*docFlag = true
+		*srcFlag = true
+		*urlFlag = true
 	}
 	var pkg, name string
 	switch flag.NArg() {
@@ -119,6 +136,11 @@ func main() {
 	}
 }
 
+var slash = string(filepath.Separator)
+var slashDot = string(filepath.Separator) + "."
+var goRootSrcPkg = filepath.Join(runtime.GOROOT(), "src", "pkg")
+var goPaths = splitGopath()
+
 func split(arg string) (pkg, name string) {
 	str := strings.Split(arg, ".")
 	if len(str) != 2 {
@@ -129,20 +151,19 @@ func split(arg string) (pkg, name string) {
 
 func paths(pkg string) []string {
 	pkgs := pathsFor(runtime.GOROOT(), pkg)
-	gopath := os.Getenv("GOPATH")
-	if gopath != "" {
-		for _, root := range splitGopath(gopath) {
-			pkgs = append(pkgs, pathsFor(root, pkg)...)
-		}
+	for _, root := range goPaths {
+		pkgs = append(pkgs, pathsFor(root, pkg)...)
 	}
 	return pkgs
 }
 
-func splitGopath(gopath string) []string {
+func splitGopath() []string {
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		return nil
+	}
 	return strings.Split(gopath, string(os.PathListSeparator))
 }
-
-var slashDot = string(filepath.Separator) + "."
 
 // pathsFor recursively walks the tree looking for possible directories for the package:
 // those whose basename is pkg.
@@ -201,11 +222,13 @@ func prefixDirectory(directory string, names []string) {
 // File is a wrapper for the state of a file used in the parser.
 // The parse tree walkers are all methods of this type.
 type File struct {
-	fset     *token.FileSet
-	name     string
-	ident    string
-	file     *ast.File
-	comments ast.CommentMap
+	fset       *token.FileSet
+	name       string
+	ident      string
+	pathPrefix string
+	urlPrefix  string
+	file       *ast.File
+	comments   ast.CommentMap
 }
 
 // doPackage analyzes the single package constructed from the named files, looking for
@@ -233,12 +256,26 @@ func doPackage(fileNames []string, ident string) {
 			// fmt.Fprintf(os.Stderr, "%s: %s", name, err)
 			return
 		}
+		urlPrefix := "http://golang.org/pkg"
+		pathPrefix := goRootSrcPkg
+		if !strings.HasPrefix(name, goRootSrcPkg) {
+			urlPrefix = "http://godoc.org"
+			for _, path := range goPaths {
+				p := filepath.Join(path, "src")
+				if strings.HasPrefix(name, p) {
+					pathPrefix = p
+					break
+				}
+			}
+		}
 		thisFile := &File{
-			fset:     fs,
-			name:     name,
-			ident:    ident,
-			file:     parsedFile,
-			comments: ast.NewCommentMap(fs, parsedFile, parsedFile.Comments),
+			fset:       fs,
+			name:       name,
+			ident:      ident,
+			file:       parsedFile,
+			pathPrefix: pathPrefix,
+			urlPrefix:  urlPrefix,
+			comments:   ast.NewCommentMap(fs, parsedFile, parsedFile.Comments),
 		}
 		files = append(files, thisFile)
 		astFiles = append(astFiles, parsedFile)
@@ -261,9 +298,13 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			switch spec := spec.(type) {
 			case *ast.ValueSpec:
 				if *constantFlag && n.Tok == token.CONST || *variableFlag && n.Tok == token.VAR {
+					tag := "pkg-constants"
+					if n.Tok == token.VAR {
+						tag = "pkg-variables"
+					}
 					for _, ident := range spec.Names {
 						if equal(ident.Name, f.ident) {
-							f.printNode(n, n.Doc)
+							f.printNode(n, n.Doc, f.nameURL(tag))
 							break
 						}
 					}
@@ -271,17 +312,17 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			case *ast.TypeSpec:
 				if equal(spec.Name.Name, f.ident) {
 					if *typeFlag {
-						f.printNode(spec, spec.Doc)
+						f.printNode(spec, spec.Doc, f.nameURL(spec.Name.Name))
 						break
 					}
 					switch spec.Type.(type) {
 					case *ast.InterfaceType:
 						if *interfaceFlag {
-							f.printNode(spec, spec.Doc)
+							f.printNode(spec, spec.Doc, f.nameURL(spec.Name.Name))
 						}
 					case *ast.StructType:
 						if *structFlag {
-							f.printNode(spec, spec.Doc)
+							f.printNode(spec, spec.Doc, f.nameURL(spec.Name.Name))
 						}
 					}
 				}
@@ -292,9 +333,11 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 	case *ast.FuncDecl:
 		// Methods, top-level functions.
 		if equal(n.Name.Name, f.ident) {
-			if *methodFlag && n.Recv != nil || *functionFlag && n.Recv == nil {
-				n.Body = nil // Do not print the function body.
-				f.printNode(n, n.Doc)
+			n.Body = nil // Do not print the function body.
+			if *methodFlag && n.Recv != nil {
+				f.printNode(n, n.Doc, f.methodURL(n.Recv.List[0].Type, n.Name.Name))
+			} else if *functionFlag && n.Recv == nil {
+				f.printNode(n, n.Doc, f.nameURL(n.Name.Name))
 			}
 		}
 	}
@@ -310,15 +353,22 @@ func equal(n1, n2 string) bool {
 	return strings.ToLower(n1) == strings.ToLower(n2)
 }
 
-func (f *File) printNode(node ast.Node, comments *ast.CommentGroup) {
+func (f *File) printNode(node ast.Node, comments *ast.CommentGroup, url string) {
+	fmt.Printf("%s%s%s", url, f.sourcePos(f.fset.Position(node.Pos())), f.docs(node, comments))
+}
+
+func (f *File) docs(node ast.Node, comments *ast.CommentGroup) []byte {
+	if !*docFlag {
+		return nil
+	}
 	commentedNode := printer.CommentedNode{Node: node}
 	if comments != nil {
 		commentedNode.Comments = []*ast.CommentGroup{comments}
 	}
 	var b bytes.Buffer
 	printer.Fprint(&b, f.fset, &commentedNode)
-	posn := f.fset.Position(node.Pos())
-	fmt.Printf("%s:%d:\n%s\n\n", posn.Filename, posn.Line, b.Bytes())
+	b.Write([]byte("\n\n")) // Add a blank line between entries if we print documentation.
+	return b.Bytes()
 }
 
 func (f *File) pkgComments() {
@@ -326,6 +376,41 @@ func (f *File) pkgComments() {
 	if doc == nil {
 		return
 	}
-	posn := f.fset.Position(doc.Pos())
-	fmt.Printf("%s:%d:\npackage %s\n%s\n\n", posn.Filename, posn.Line, f.file.Name.Name, doc.Text())
+	fmt.Printf("%spackage %s\n%s\n\n", f.packageURL(), f.sourcePos(f.fset.Position(doc.Pos())), f.file.Name.Name, doc.Text())
+}
+
+func (f *File) packageURL() string {
+	s := strings.TrimPrefix(f.name, f.pathPrefix)
+	// Now we have a path with a final file name. Drop it.
+	if i := strings.LastIndex(s, slash); i > 0 {
+		s = s[:i+1]
+	}
+	return f.urlPrefix + s
+}
+
+func (f *File) sourcePos(posn token.Position) string {
+	if !*srcFlag {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d:\n", posn.Filename, posn.Line)
+}
+
+func (f *File) nameURL(name string) string {
+	if !*urlFlag {
+		return ""
+	}
+	return fmt.Sprintf("%s#%s\n", f.packageURL(), name)
+}
+
+func (f *File) methodURL(typ ast.Expr, name string) string {
+	if !*urlFlag {
+		return ""
+	}
+	var b bytes.Buffer
+	printer.Fprint(&b, f.fset, typ)
+	typeName := b.Bytes()
+	if len(typeName) > 0 && typeName[0] == '*' {
+		typeName = typeName[1:]
+	}
+	return fmt.Sprintf("%s#%s.%s\n", f.packageURL(), typeName, name)
 }
