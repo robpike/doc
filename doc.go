@@ -49,7 +49,9 @@ usage:
 	doc -pkg pkg   # "doc fmt"
 pkg is the last component of any package, e.g. fmt, parser
 name is the name of an exported symbol; case is ignored in matches.
-Flags -c(onst) -f(unc) -m(ethod) -t(ype) -v(ar) restrict hits to declarations
+Flags
+	-c(onst) -f(unc) -i(nterface)-m(ethod) -s(truct) -t(ype) -v(ar)
+restrict hits to declarations
 of the corresponding kind.
 `
 
@@ -59,26 +61,30 @@ func usage() {
 }
 
 var (
-	constantFlag = flag.Bool("const", false, "show doc for consts only")
-	functionFlag = flag.Bool("func", false, "show doc for funcs only")
-	methodFlag   = flag.Bool("method", false, "show doc for methods only")
-	packageFlag  = flag.Bool("package", false, "show top-level package doc only")
-	typeFlag     = flag.Bool("type", false, "show doc for types only")
-	variableFlag = flag.Bool("var", false, "show  doc for vars only")
+	constantFlag  = flag.Bool("const", false, "show doc for consts only")
+	functionFlag  = flag.Bool("func", false, "show doc for funcs only")
+	interfaceFlag = flag.Bool("interface", false, "show doc for interfaces only")
+	methodFlag    = flag.Bool("method", false, "show doc for methods only")
+	packageFlag   = flag.Bool("package", false, "show top-level package doc only")
+	structFlag    = flag.Bool("struct", false, "show doc for structs only")
+	typeFlag      = flag.Bool("type", false, "show doc for types only")
+	variableFlag  = flag.Bool("var", false, "show  doc for vars only")
 )
 
 func init() {
 	flag.BoolVar(constantFlag, "c", false, "alias for -const")
 	flag.BoolVar(functionFlag, "f", false, "alias for -func")
+	flag.BoolVar(interfaceFlag, "i", false, "alias for -interface")
 	flag.BoolVar(methodFlag, "m", false, "alias for -method")
 	flag.BoolVar(packageFlag, "pkg", false, "alias for -package")
+	flag.BoolVar(structFlag, "s", false, "alias for -struct")
 	flag.BoolVar(typeFlag, "t", false, "alias for -type")
 	flag.BoolVar(variableFlag, "v", false, "alias for -var")
 }
 
 func main() {
 	flag.Parse()
-	if !(*constantFlag || *functionFlag || *methodFlag || *packageFlag || *typeFlag || *variableFlag) { // none set
+	if !(*constantFlag || *functionFlag || *interfaceFlag || *methodFlag || *packageFlag || *structFlag || *typeFlag || *variableFlag) { // none set
 		*constantFlag = true
 		*functionFlag = true
 		*methodFlag = true
@@ -259,8 +265,21 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 					}
 				}
 			case *ast.TypeSpec:
-				if *typeFlag && equal(spec.Name.Name, f.ident) {
-					f.printNode(n, n.Doc)
+				if equal(spec.Name.Name, f.ident) {
+					if *typeFlag {
+						f.printNode(n, n.Doc)
+						break
+					}
+					switch spec.Type.(type) {
+					case *ast.InterfaceType:
+						if *interfaceFlag {
+							f.printNode(n, n.Doc)
+						}
+					case *ast.StructType:
+						if *structFlag {
+							f.printNode(n, n.Doc)
+						}
+					}
 				}
 			case *ast.ImportSpec:
 				continue // Don't care.
