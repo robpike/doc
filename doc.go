@@ -224,10 +224,12 @@ func prefixDirectory(directory string, names []string) {
 // The parse tree walkers are all methods of this type.
 type File struct {
 	fset       *token.FileSet
-	name       string
-	ident      string
-	pathPrefix string
-	urlPrefix  string
+	name       string // Name of file.
+	ident      string // Identifier we are searching for.
+	pathPrefix string // Prefix from GOROOT/GOPATH.
+	urlPrefix  string // Start of corresponding URL for golang.org or godoc.org.
+	constTag   string // #tag for constants in URL (they are not tagged individually).
+	varTag     string // #tag for variables in URL (they are not tagged individually).
 	file       *ast.File
 	comments   ast.CommentMap
 }
@@ -257,32 +259,35 @@ func doPackage(fileNames []string, ident string) {
 			// fmt.Fprintf(os.Stderr, "%s: %s", name, err)
 			return
 		}
-		var urlPrefix, pathPrefix string
+		thisFile := &File{
+			fset:     fs,
+			name:     name,
+			ident:    ident,
+			file:     parsedFile,
+			comments: ast.NewCommentMap(fs, parsedFile, parsedFile.Comments),
+		}
 		switch {
 		case strings.HasPrefix(name, goRootSrcPkg):
-			urlPrefix = "http://golang.org/pkg"
-			pathPrefix = goRootSrcPkg
+			thisFile.urlPrefix = "http://golang.org/pkg"
+			thisFile.pathPrefix = goRootSrcPkg
+			thisFile.constTag = "pkg-constants"
+			thisFile.varTag = "pkg-variables"
 		case strings.HasPrefix(name, goRootSrcCmd):
-			urlPrefix = "http://golang.org/cmd"
-			pathPrefix = goRootSrcCmd
+			thisFile.urlPrefix = "http://golang.org/cmd"
+			thisFile.pathPrefix = goRootSrcCmd
+			thisFile.constTag = "pkg-constants"
+			thisFile.varTag = "pkg-variables"
 		default:
-			urlPrefix = "http://godoc.org"
+			thisFile.urlPrefix = "http://godoc.org"
+			thisFile.constTag = "_constants"
+			thisFile.varTag = "_variables"
 			for _, path := range goPaths {
 				p := filepath.Join(path, "src")
 				if strings.HasPrefix(name, p) {
-					pathPrefix = p
+					thisFile.pathPrefix = p
 					break
 				}
 			}
-		}
-		thisFile := &File{
-			fset:       fs,
-			name:       name,
-			ident:      ident,
-			file:       parsedFile,
-			pathPrefix: pathPrefix,
-			urlPrefix:  urlPrefix,
-			comments:   ast.NewCommentMap(fs, parsedFile, parsedFile.Comments),
 		}
 		files = append(files, thisFile)
 		astFiles = append(astFiles, parsedFile)
@@ -305,9 +310,9 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			switch spec := spec.(type) {
 			case *ast.ValueSpec:
 				if *constantFlag && n.Tok == token.CONST || *variableFlag && n.Tok == token.VAR {
-					tag := "pkg-constants"
+					tag := f.constTag
 					if n.Tok == token.VAR {
-						tag = "pkg-variables"
+						tag = f.varTag
 					}
 					for _, ident := range spec.Names {
 						if equal(ident.Name, f.ident) {
@@ -319,11 +324,11 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			case *ast.TypeSpec:
 				// If there is only one Spec, there are probably no parens and the
 				// comment we want appears before the type keyword, bound to
-				// the GenDecl. If there are mutiple Specs, the comment we want
-				// is bound to the spec. Hence we dig into the GenDecl to the Spec,
-				// but only if there is a single Spec.
+				// the GenDecl. If the Specs are parenthesized, the comment we want
+				// is bound to the Spec. Hence we dig into the GenDecl to the Spec,
+				// but only if there are no parens.
 				node := ast.Node(n)
-				if len(n.Specs) > 1 {
+				if n.Lparen.IsValid() {
 					node = spec
 				}
 				if equal(spec.Name.Name, f.ident) {
