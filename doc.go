@@ -319,17 +319,17 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			case *ast.TypeSpec:
 				if equal(spec.Name.Name, f.ident) {
 					if *typeFlag {
-						f.printNode(spec, spec.Name, f.nameURL(spec.Name.Name))
+						f.printNode(n, spec.Name, f.nameURL(spec.Name.Name))
 						break
 					}
 					switch spec.Type.(type) {
 					case *ast.InterfaceType:
 						if *interfaceFlag {
-							f.printNode(spec, spec.Name, f.nameURL(spec.Name.Name))
+							f.printNode(n, spec.Name, f.nameURL(spec.Name.Name))
 						}
 					case *ast.StructType:
 						if *structFlag {
-							f.printNode(spec, spec.Name, f.nameURL(spec.Name.Name))
+							f.printNode(n, spec.Name, f.nameURL(spec.Name.Name))
 						}
 					}
 				}
