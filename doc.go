@@ -317,13 +317,11 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 					}
 				}
 			case *ast.TypeSpec:
-				// We have a GenDecl and then maybe multiple Specs inside it.
-				// We always want to print the Spec, but we need the whole
-				// GenDecl to get the right comments if there is only one
-				// Spec. The tying of comments to nodes is peculiar, and to
-				// make it work in both cases we print the entire GenDecl
-				// if there's only one Spec, but only the Spec if there are
-				// multiple. Odd.
+				// If there is only one Spec, there are probably no parens and the
+				// comment we want appears before the type keyword, bound to
+				// the GenDecl. If there are mutiple Specs, the comment we want
+				// is bound to the spec. Hence we dig into the GenDecl to the Spec,
+				// but only if there is a single Spec.
 				node := ast.Node(n)
 				if len(n.Specs) > 1 {
 					node = spec
