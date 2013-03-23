@@ -228,11 +228,11 @@ type File struct {
 	ident      string // Identifier we are searching for.
 	pathPrefix string // Prefix from GOROOT/GOPATH.
 	urlPrefix  string // Start of corresponding URL for golang.org or godoc.org.
-	constTag   string // #tag for constants in URL (they are not tagged individually).
-	varTag     string // #tag for variables in URL (they are not tagged individually).
 	file       *ast.File
 	comments   ast.CommentMap
 }
+
+const godocOrg = "http://godoc.org"
 
 // doPackage analyzes the single package constructed from the named files, looking for
 // the definition of ident.
@@ -270,17 +270,11 @@ func doPackage(fileNames []string, ident string) {
 		case strings.HasPrefix(name, goRootSrcPkg):
 			thisFile.urlPrefix = "http://golang.org/pkg"
 			thisFile.pathPrefix = goRootSrcPkg
-			thisFile.constTag = "pkg-constants"
-			thisFile.varTag = "pkg-variables"
 		case strings.HasPrefix(name, goRootSrcCmd):
 			thisFile.urlPrefix = "http://golang.org/cmd"
 			thisFile.pathPrefix = goRootSrcCmd
-			thisFile.constTag = "pkg-constants"
-			thisFile.varTag = "pkg-variables"
 		default:
-			thisFile.urlPrefix = "http://godoc.org"
-			thisFile.constTag = "_constants"
-			thisFile.varTag = "_variables"
+			thisFile.urlPrefix = godocOrg
 			for _, path := range goPaths {
 				p := filepath.Join(path, "src")
 				if strings.HasPrefix(name, p) {
@@ -310,12 +304,15 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			switch spec := spec.(type) {
 			case *ast.ValueSpec:
 				if *constantFlag && n.Tok == token.CONST || *variableFlag && n.Tok == token.VAR {
-					tag := f.constTag
+					tag := "pkg-constants"
 					if n.Tok == token.VAR {
-						tag = f.varTag
+						tag = "pkg-variables"
 					}
 					for _, ident := range spec.Names {
 						if equal(ident.Name, f.ident) {
+							if f.urlPrefix == godocOrg {
+								tag = ident.Name
+							}
 							f.printNode(n, ident, f.nameURL(tag))
 							break
 						}
