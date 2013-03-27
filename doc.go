@@ -304,16 +304,9 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			switch spec := spec.(type) {
 			case *ast.ValueSpec:
 				if *constantFlag && n.Tok == token.CONST || *variableFlag && n.Tok == token.VAR {
-					tag := "pkg-constants"
-					if n.Tok == token.VAR {
-						tag = "pkg-variables"
-					}
 					for _, ident := range spec.Names {
 						if equal(ident.Name, f.ident) {
-							if f.urlPrefix == godocOrg {
-								tag = ident.Name
-							}
-							f.printNode(n, ident, f.nameURL(tag))
+							f.printNode(n, ident, f.nameURL(ident.Name))
 							break
 						}
 					}
