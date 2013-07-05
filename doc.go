@@ -33,11 +33,9 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/parser"
 	"go/printer"
 	"go/token"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -196,19 +194,11 @@ func pathsFor(root, pkg string) []string {
 
 // lookInDirectory looks in the package (if any) in the directory for the named exported identifier.
 func lookInDirectory(directory, name string) {
-	pkg, err := build.Default.ImportDir(directory, 0)
-	if err != nil {
-		// If it's just that there are no go source files, that's fine.
-		if _, nogo := err.(*build.NoGoError); nogo {
-			return
-		}
-		// Non-fatal: we are doing a recursive walk and there may be other directories.
-		return
+	fset := token.NewFileSet()
+	pkgs, _ := parser.ParseDir(fset, directory, nil, parser.ParseComments) // Ignore the error.
+	for _, pkg := range pkgs {
+		doPackage(pkg, fset, name)
 	}
-	var fileNames []string
-	fileNames = append(fileNames, pkg.GoFiles...)
-	prefixDirectory(directory, fileNames)
-	doPackage(fileNames, name)
 }
 
 // prefixDirectory places the directory name on the beginning of each name in the list.
@@ -236,57 +226,35 @@ const godocOrg = "http://godoc.org"
 
 // doPackage analyzes the single package constructed from the named files, looking for
 // the definition of ident.
-func doPackage(fileNames []string, ident string) {
-	var files []*File
-	var astFiles []*ast.File
-	fs := token.NewFileSet()
-	for _, name := range fileNames {
-		f, err := os.Open(name)
-		if err != nil {
-			// Warn but continue to next package.
-			fmt.Fprintf(os.Stderr, "%s: %s", name, err)
-			return
+func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
+	for name, astFile := range pkg.Files {
+		if *packageFlag && astFile.Doc == nil {
+			continue
 		}
-		defer f.Close()
-		data, err := ioutil.ReadAll(f)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %s", name, err)
-			return
-		}
-		parsedFile, err := parser.ParseFile(fs, name, bytes.NewReader(data), parser.ParseComments)
-		if err != nil {
-			// Noisy - just ignore.
-			// fmt.Fprintf(os.Stderr, "%s: %s", name, err)
-			return
-		}
-		thisFile := &File{
-			fset:     fs,
+		file := &File{
+			fset:     fset,
 			name:     name,
 			ident:    ident,
-			file:     parsedFile,
-			comments: ast.NewCommentMap(fs, parsedFile, parsedFile.Comments),
+			file:     astFile,
+			comments: ast.NewCommentMap(fset, astFile, astFile.Comments),
 		}
 		switch {
 		case strings.HasPrefix(name, goRootSrcPkg):
-			thisFile.urlPrefix = "http://golang.org/pkg"
-			thisFile.pathPrefix = goRootSrcPkg
+			file.urlPrefix = "http://golang.org/pkg"
+			file.pathPrefix = goRootSrcPkg
 		case strings.HasPrefix(name, goRootSrcCmd):
-			thisFile.urlPrefix = "http://golang.org/cmd"
-			thisFile.pathPrefix = goRootSrcCmd
+			file.urlPrefix = "http://golang.org/cmd"
+			file.pathPrefix = goRootSrcCmd
 		default:
-			thisFile.urlPrefix = godocOrg
+			file.urlPrefix = godocOrg
 			for _, path := range goPaths {
 				p := filepath.Join(path, "src")
 				if strings.HasPrefix(name, p) {
-					thisFile.pathPrefix = p
+					file.pathPrefix = p
 					break
 				}
 			}
 		}
-		files = append(files, thisFile)
-		astFiles = append(astFiles, parsedFile)
-	}
-	for _, file := range files {
 		if *packageFlag {
 			file.pkgComments()
 		} else {
