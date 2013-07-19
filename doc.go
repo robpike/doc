@@ -354,10 +354,14 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 	return f
 }
 
+func exported(name string) bool {
+	r, _ := utf8.DecodeRuneInString(name)
+	return unicode.IsUpper(r)
+}
+
 func equal(n1, n2 string) bool {
 	// n1 must  be exported.
-	r, _ := utf8.DecodeRuneInString(n1)
-	if !unicode.IsUpper(r) {
+	if !exported(n1) {
 		return false
 	}
 	return strings.ToLower(n1) == strings.ToLower(n2)
@@ -441,6 +445,9 @@ type methodVisitor struct {
 }
 
 func (f *File) method(meth *types.Method) {
+	if !exported(meth.Name()) {
+		return
+	}
 	m := &methodVisitor{
 		File: f,
 		pos:  meth.Pos(),
