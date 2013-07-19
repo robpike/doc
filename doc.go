@@ -43,6 +43,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"code.google.com/p/go.tools/go/types"
 )
 
 const usageDoc = `Find documentation for names.
@@ -220,6 +222,7 @@ type File struct {
 	urlPrefix  string // Start of corresponding URL for golang.org or godoc.org.
 	file       *ast.File
 	comments   ast.CommentMap
+	objs       map[*ast.Ident]types.Object
 }
 
 const godocOrg = "http://godoc.org"
@@ -227,6 +230,26 @@ const godocOrg = "http://godoc.org"
 // doPackage analyzes the single package constructed from the named files, looking for
 // the definition of ident.
 func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
+	// Type check to build map from name to type.
+	objects := make(map[*ast.Ident]types.Object)
+	// By providing the Context with our own error function, it will continue
+	// past the first error. There is no need for that function to do anything.
+	config := types.Config{
+		Error: func(error) {},
+	}
+	info := &types.Info{
+		Objects: objects,
+	}
+	path := ""
+	var astFiles []*ast.File
+	for name, astFile := range pkg.Files {
+		if path == "" {
+			path = name
+		}
+		astFiles = append(astFiles, astFile)
+	}
+	config.Check(path, fset, astFiles, info) // Ignore errors.
+
 	for name, astFile := range pkg.Files {
 		if *packageFlag && astFile.Doc == nil {
 			continue
@@ -237,6 +260,7 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 			ident:    ident,
 			file:     astFile,
 			comments: ast.NewCommentMap(fset, astFile, astFile.Comments),
+			objs:     objects,
 		}
 		switch {
 		case strings.HasPrefix(name, goRootSrcPkg):
@@ -292,17 +316,24 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 				if equal(spec.Name.Name, f.ident) {
 					if *typeFlag {
 						f.printNode(node, spec.Name, f.nameURL(spec.Name.Name))
-						break
+					} else {
+						switch spec.Type.(type) {
+						case *ast.InterfaceType:
+							if *interfaceFlag {
+								f.printNode(node, spec.Name, f.nameURL(spec.Name.Name))
+							}
+						case *ast.StructType:
+							if *structFlag {
+								f.printNode(node, spec.Name, f.nameURL(spec.Name.Name))
+							}
+						}
 					}
-					switch spec.Type.(type) {
-					case *ast.InterfaceType:
-						if *interfaceFlag {
-							f.printNode(node, spec.Name, f.nameURL(spec.Name.Name))
-						}
-					case *ast.StructType:
-						if *structFlag {
-							f.printNode(node, spec.Name, f.nameURL(spec.Name.Name))
-						}
+					ms := f.objs[spec.Name].Type().MethodSet()
+					if ms.Len() == 0 {
+						ms = types.NewPointer(f.objs[spec.Name].Type()).MethodSet()
+					}
+					for i := 0; i < ms.Len(); i++ {
+						f.method(ms.At(i))
 					}
 				}
 			case *ast.ImportSpec:
@@ -400,4 +431,33 @@ func (f *File) methodURL(typ ast.Expr, name string) string {
 		typeName = typeName[1:]
 	}
 	return fmt.Sprintf("%s#%s.%s\n", f.packageURL(), typeName, name)
+}
+
+// Here follows the code to find a print a method. It should be much easier than walking the whole tree again. TODO.
+
+type methodVisitor struct {
+	*File
+	pos token.Pos // The position of the identifier naming the method.
+}
+
+func (f *File) method(meth *types.Method) {
+	m := &methodVisitor{
+		File: f,
+		pos:  meth.Pos(),
+	}
+	ast.Walk(m, f.file)
+}
+
+// Visit implements the ast.Visitor interface.
+func (m *methodVisitor) Visit(node ast.Node) ast.Visitor {
+	switch n := node.(type) {
+	case *ast.FuncDecl:
+		// If this is the right one, the position of the name of its identifier will match.
+		if m.pos == n.Name.Pos() {
+			n.Body = nil // TODO. Ugly - don't print the function body.
+			m.printNode(n, n.Name, m.nameURL(n.Name.Name))
+			return nil
+		}
+	}
+	return m
 }
