@@ -223,6 +223,8 @@ type File struct {
 	file       *ast.File
 	comments   ast.CommentMap
 	objs       map[*ast.Ident]types.Object
+	doPrint    bool
+	found      bool
 }
 
 const godocOrg = "http://godoc.org"
@@ -230,6 +232,55 @@ const godocOrg = "http://godoc.org"
 // doPackage analyzes the single package constructed from the named files, looking for
 // the definition of ident.
 func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
+	var files []*File
+	found := false
+	for name, astFile := range pkg.Files {
+		if *packageFlag && astFile.Doc == nil {
+			continue
+		}
+		file := &File{
+			fset:     fset,
+			name:     name,
+			ident:    ident,
+			file:     astFile,
+			comments: ast.NewCommentMap(fset, astFile, astFile.Comments),
+		}
+		switch {
+		case strings.HasPrefix(name, goRootSrcPkg):
+			file.urlPrefix = "http://golang.org/pkg"
+			file.pathPrefix = goRootSrcPkg
+		case strings.HasPrefix(name, goRootSrcCmd):
+			file.urlPrefix = "http://golang.org/cmd"
+			file.pathPrefix = goRootSrcCmd
+		default:
+			file.urlPrefix = godocOrg
+			for _, path := range goPaths {
+				p := filepath.Join(path, "src")
+				if strings.HasPrefix(name, p) {
+					file.pathPrefix = p
+					break
+				}
+			}
+		}
+		files = append(files, file)
+		if found {
+			continue
+		}
+		file.doPrint = false
+		if *packageFlag {
+			file.pkgComments()
+		} else {
+			ast.Walk(file, file.file)
+			if file.found {
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		return
+	}
+
 	// Type check to build map from name to type.
 	objects := make(map[*ast.Ident]types.Object)
 	// By providing the Context with our own error function, it will continue
@@ -250,35 +301,9 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 	}
 	config.Check(path, fset, astFiles, info) // Ignore errors.
 
-	for name, astFile := range pkg.Files {
-		if *packageFlag && astFile.Doc == nil {
-			continue
-		}
-		file := &File{
-			fset:     fset,
-			name:     name,
-			ident:    ident,
-			file:     astFile,
-			comments: ast.NewCommentMap(fset, astFile, astFile.Comments),
-			objs:     objects,
-		}
-		switch {
-		case strings.HasPrefix(name, goRootSrcPkg):
-			file.urlPrefix = "http://golang.org/pkg"
-			file.pathPrefix = goRootSrcPkg
-		case strings.HasPrefix(name, goRootSrcCmd):
-			file.urlPrefix = "http://golang.org/cmd"
-			file.pathPrefix = goRootSrcCmd
-		default:
-			file.urlPrefix = godocOrg
-			for _, path := range goPaths {
-				p := filepath.Join(path, "src")
-				if strings.HasPrefix(name, p) {
-					file.pathPrefix = p
-					break
-				}
-			}
-		}
+	for _, file := range files {
+		file.doPrint = true
+		file.objs = objects
 		if *packageFlag {
 			file.pkgComments()
 		} else {
@@ -328,12 +353,14 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 							}
 						}
 					}
-					ms := f.objs[spec.Name].Type().MethodSet()
-					if ms.Len() == 0 {
-						ms = types.NewPointer(f.objs[spec.Name].Type()).MethodSet()
-					}
-					for i := 0; i < ms.Len(); i++ {
-						f.method(ms.At(i))
+					if f.doPrint {
+						ms := f.objs[spec.Name].Type().MethodSet()
+						if ms.Len() == 0 {
+							ms = types.NewPointer(f.objs[spec.Name].Type()).MethodSet()
+						}
+						for i := 0; i < ms.Len(); i++ {
+							f.method(ms.At(i))
+						}
 					}
 				}
 			case *ast.ImportSpec:
@@ -368,6 +395,10 @@ func equal(n1, n2 string) bool {
 }
 
 func (f *File) printNode(node, ident ast.Node, url string) {
+	if !f.doPrint {
+		f.found = true
+		return
+	}
 	fmt.Printf("%s%s%s", url, f.sourcePos(f.fset.Position(ident.Pos())), f.docs(node))
 }
 
