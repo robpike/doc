@@ -225,6 +225,7 @@ type File struct {
 	objs       map[*ast.Ident]types.Object
 	doPrint    bool
 	found      bool
+	allFiles   []*File // All files in the package.
 }
 
 const godocOrg = "http://godoc.org"
@@ -301,6 +302,10 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 	}
 	config.Check(path, fset, astFiles, info) // Ignore errors.
 
+	// We need to search all files for methods, so record the full list in each file.
+	for _, file := range files {
+		file.allFiles = files
+	}
 	for _, file := range files {
 		file.doPrint = true
 		file.objs = objects
@@ -468,7 +473,9 @@ func (f *File) methodURL(typ ast.Expr, name string) string {
 	return fmt.Sprintf("%s#%s.%s\n", f.packageURL(), typeName, name)
 }
 
-// Here follows the code to find a print a method. It should be much easier than walking the whole tree again. TODO.
+// Here follows the code to find and print a method.
+// It should be much easier than walking the whole tree again, but that's what we must do.
+// TODO.
 
 type methodVisitor struct {
 	*File
@@ -479,11 +486,13 @@ func (f *File) method(meth *types.Method) {
 	if !exported(meth.Name()) {
 		return
 	}
-	m := &methodVisitor{
-		File: f,
-		pos:  meth.Pos(),
+	for _, file := range f.allFiles {
+		m := &methodVisitor{
+			File: file,
+			pos:  meth.Pos(),
+		}
+		ast.Walk(m, file.file)
 	}
-	ast.Walk(m, f.file)
 }
 
 // Visit implements the ast.Visitor interface.
