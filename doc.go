@@ -363,9 +363,7 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 						if ms.Len() == 0 {
 							ms = types.NewPointer(f.objs[spec.Name].Type()).MethodSet()
 						}
-						for i := 0; i < ms.Len(); i++ {
-							f.method(ms.At(i))
-						}
+						f.method(ms)
 					}
 				}
 			case *ast.ImportSpec:
@@ -473,23 +471,32 @@ func (f *File) methodURL(typ ast.Expr, name string) string {
 	return fmt.Sprintf("%s#%s.%s\n", f.packageURL(), typeName, name)
 }
 
-// Here follows the code to find and print a method.
+// Here follows the code to find and print a method (actually a metod set, because
+// we want to do only one redundant tree walk, not one per method).
 // It should be much easier than walking the whole tree again, but that's what we must do.
 // TODO.
 
 type methodVisitor struct {
 	*File
-	pos token.Pos // The position of the identifier naming the method.
+	set *types.MethodSet
 }
 
-func (f *File) method(meth *types.Method) {
-	if !exported(meth.Name()) {
+func (f *File) method(set *types.MethodSet) {
+	// Check we have something to look for.
+	found := false
+	for i := 0; i < set.Len(); i++ {
+		if exported(set.At(i).Name()) {
+			found = true
+			break
+		}
+	}
+	if !found {
 		return
 	}
 	for _, file := range f.allFiles {
 		m := &methodVisitor{
 			File: file,
-			pos:  meth.Pos(),
+			set:  set,
 		}
 		ast.Walk(m, file.file)
 	}
@@ -499,11 +506,17 @@ func (f *File) method(meth *types.Method) {
 func (m *methodVisitor) Visit(node ast.Node) ast.Visitor {
 	switch n := node.(type) {
 	case *ast.FuncDecl:
-		// If this is the right one, the position of the name of its identifier will match.
-		if m.pos == n.Name.Pos() {
-			n.Body = nil // TODO. Ugly - don't print the function body.
-			m.printNode(n, n.Name, m.nameURL(n.Name.Name))
-			return nil
+		for i := 0; i < m.set.Len(); i++ {
+			method := m.set.At(i)
+			if !exported(method.Name()) {
+				continue
+			}
+			// If this is the right one, the position of the name of its identifier will match.
+			if method.Pos() == n.Name.Pos() {
+				n.Body = nil // TODO. Ugly - don't print the function body.
+				m.printNode(n, n.Name, m.nameURL(n.Name.Name))
+				return nil
+			}
 		}
 	}
 	return m
