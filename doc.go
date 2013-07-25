@@ -358,7 +358,7 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 							}
 						}
 					}
-					if f.doPrint {
+					if f.doPrint && f.objs[spec.Name] != nil && f.objs[spec.Name].Type() != nil {
 						ms := f.objs[spec.Name].Type().MethodSet()
 						if ms.Len() == 0 {
 							ms = types.NewPointer(f.objs[spec.Name].Type()).MethodSet()
@@ -476,49 +476,69 @@ func (f *File) methodURL(typ ast.Expr, name string) string {
 // It should be much easier than walking the whole tree again, but that's what we must do.
 // TODO.
 
+type method struct {
+	index int // Which doc to write. (Keeps the results sorted)
+	*types.Method
+}
+
 type methodVisitor struct {
 	*File
-	methods []*types.Method
+	methods []method
+	docs    []string
 }
 
 func (f *File) methodSet(set *types.MethodSet) {
 	// Build the set of things we're looking for.
-	methods := make([]*types.Method, 0, set.Len())
+	methods := make([]method, 0, set.Len())
+	docs := make([]string, set.Len())
 	for i := 0; i < set.Len(); i++ {
 		if exported(set.At(i).Name()) {
-			methods = append(methods, set.At(i))
+			m := method{
+				i,
+				set.At(i),
+			}
+			methods = append(methods, m)
 		}
 	}
 	if len(methods) == 0 {
 		return
 	}
+	// Collect the docs.
 	for _, file := range f.allFiles {
-		m := &methodVisitor{
+		visitor := &methodVisitor{
 			File:    file,
 			methods: methods,
+			docs:    docs,
 		}
-		ast.Walk(m, file.file)
+		ast.Walk(visitor, file.file)
+		methods = visitor.methods
+	}
+	// Print them in order. The incoming method set is sorted by name.
+	for _, doc := range docs {
+		if doc != "" {
+			fmt.Print(doc)
+		}
 	}
 }
 
 // Visit implements the ast.Visitor interface.
-func (m *methodVisitor) Visit(node ast.Node) ast.Visitor {
+func (visitor *methodVisitor) Visit(node ast.Node) ast.Visitor {
 	switch n := node.(type) {
 	case *ast.FuncDecl:
-		for i, method := range m.methods {
+		for i, method := range visitor.methods {
 			// If this is the right one, the position of the name of its identifier will match.
 			if method.Pos() == n.Name.Pos() {
 				n.Body = nil // TODO. Ugly - don't print the function body.
-				m.printNode(n, n.Name, m.nameURL(n.Name.Name))
+				visitor.docs[method.index] = fmt.Sprintf("%s", visitor.File.docs(n))
 				// If this was the last method, we're done.
-				if len(m.methods) == 1 {
+				if len(visitor.methods) == 1 {
 					return nil
 				}
 				// Drop this one from the list.
-				m.methods = append(m.methods[:i], m.methods[i+1:]...)
-				return m
+				visitor.methods = append(visitor.methods[:i], visitor.methods[i+1:]...)
+				return visitor
 			}
 		}
 	}
-	return m
+	return visitor
 }
