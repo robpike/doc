@@ -478,7 +478,7 @@ func (f *File) methodURL(typ ast.Expr, name string) string {
 
 type method struct {
 	index int // Which doc to write. (Keeps the results sorted)
-	*types.Method
+	*types.Selection
 }
 
 type methodVisitor struct {
@@ -492,7 +492,7 @@ func (f *File) methodSet(set *types.MethodSet) {
 	methods := make([]method, 0, set.Len())
 	docs := make([]string, set.Len())
 	for i := 0; i < set.Len(); i++ {
-		if exported(set.At(i).Name()) {
+		if exported(set.At(i).Obj().Name()) {
 			m := method{
 				i,
 				set.At(i),
@@ -527,7 +527,7 @@ func (visitor *methodVisitor) Visit(node ast.Node) ast.Visitor {
 	case *ast.FuncDecl:
 		for i, method := range visitor.methods {
 			// If this is the right one, the position of the name of its identifier will match.
-			if method.Pos() == n.Name.Pos() {
+			if method.Obj().Pos() == n.Name.Pos() {
 				n.Body = nil // TODO. Ugly - don't print the function body.
 				visitor.docs[method.index] = fmt.Sprintf("%s", visitor.File.docs(n))
 				// If this was the last method, we're done.
