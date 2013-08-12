@@ -39,10 +39,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"code.google.com/p/go.tools/go/types"
 )
@@ -53,14 +52,25 @@ usage:
 	doc pkg name   # "doc fmt Printf"
 	doc name       # "doc isupper" finds unicode.IsUpper
 	doc -pkg pkg   # "doc fmt"
+	doc -r expr    # "doc -r '.*exported'"
 pkg is the last component of any package, e.g. fmt, parser
 name is the name of an exported symbol; case is ignored in matches.
+
+The name may also be a regular expression to select which names
+to match. In regular expression searches, case is ignored and
+the pattern must match the entire name, so ".?print" will match
+Print, Fprint and Sprint but not Fprintf.
+
 Flags
 	-c(onst) -f(unc) -i(nterface) -m(ethod) -s(truct) -t(ype) -v(ar)
 restrict hits to declarations of the corresponding kind.
 Flags
 	-doc -src -url
 restrict printing to the documentation, source path, or godoc URL.
+Flag
+	-r
+takes a single argument (no package), a name or regular expression
+to search for in all packages.
 `
 
 func usage() {
@@ -82,9 +92,10 @@ var (
 
 var (
 	// If none is set, all are set.
-	docFlag = flag.Bool("doc", false, "restrict output to documentation only")
-	srcFlag = flag.Bool("src", false, "restrict output to source file only")
-	urlFlag = flag.Bool("url", false, "restrict output to godoc URL only")
+	docFlag    = flag.Bool("doc", false, "restrict output to documentation only")
+	srcFlag    = flag.Bool("src", false, "restrict output to source file only")
+	urlFlag    = flag.Bool("url", false, "restrict output to godoc URL only")
+	regexpFlag = flag.Bool("r", false, "single argument is a regular expression for a name")
 )
 
 func init() {
@@ -99,6 +110,7 @@ func init() {
 }
 
 func main() {
+	flag.Usage = usage
 	flag.Parse()
 	if !(*constantFlag || *functionFlag || *interfaceFlag || *methodFlag || *packageFlag || *structFlag || *typeFlag || *variableFlag) { // none set
 		*constantFlag = true
@@ -118,6 +130,8 @@ func main() {
 	case 1:
 		if *packageFlag {
 			pkg = flag.Arg(0)
+		} else if *regexpFlag {
+			name = flag.Arg(0)
 		} else if strings.Contains(flag.Arg(0), ".") {
 			pkg, name = split(flag.Arg(0))
 		} else {
@@ -143,11 +157,8 @@ var goRootSrcCmd = filepath.Join(runtime.GOROOT(), "src", "cmd")
 var goPaths = splitGopath()
 
 func split(arg string) (pkg, name string) {
-	str := strings.Split(arg, ".")
-	if len(str) != 2 {
-		usage()
-	}
-	return str[0], str[1]
+	dot := strings.IndexRune(arg, '.') // We know there's one there.
+	return arg[0:dot], arg[dot+1:]
 }
 
 func paths(pkg string) []string {
@@ -218,6 +229,7 @@ type File struct {
 	fset       *token.FileSet
 	name       string // Name of file.
 	ident      string // Identifier we are searching for.
+	regexp     *regexp.Regexp
 	pathPrefix string // Prefix from GOROOT/GOPATH.
 	urlPrefix  string // Start of corresponding URL for golang.org or godoc.org.
 	file       *ast.File
@@ -245,6 +257,15 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 			ident:    ident,
 			file:     astFile,
 			comments: ast.NewCommentMap(fset, astFile, astFile.Comments),
+		}
+		if regexp.QuoteMeta(ident) != ident {
+			// It's a regular expression.
+			var err error
+			file.regexp, err = regexp.Compile("^(?i:" + ident + ")$")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "regular expression `%s`:", err)
+				os.Exit(2)
+			}
 		}
 		switch {
 		case strings.HasPrefix(name, goRootSrcPkg):
@@ -327,7 +348,7 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 			case *ast.ValueSpec:
 				if *constantFlag && n.Tok == token.CONST || *variableFlag && n.Tok == token.VAR {
 					for _, ident := range spec.Names {
-						if equal(ident.Name, f.ident) {
+						if f.match(ident.Name) {
 							f.printNode(n, ident, f.nameURL(ident.Name))
 							break
 						}
@@ -343,7 +364,7 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 				if n.Lparen.IsValid() {
 					node = spec
 				}
-				if equal(spec.Name.Name, f.ident) {
+				if f.match(spec.Name.Name) {
 					if *typeFlag {
 						f.printNode(node, spec.Name, f.nameURL(spec.Name.Name))
 					} else {
@@ -372,7 +393,7 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 		}
 	case *ast.FuncDecl:
 		// Methods, top-level functions.
-		if equal(n.Name.Name, f.ident) {
+		if f.match(n.Name.Name) {
 			n.Body = nil // Do not print the function body.
 			if *methodFlag && n.Recv != nil {
 				f.printNode(n, n.Name, f.methodURL(n.Recv.List[0].Type, n.Name.Name))
@@ -384,17 +405,15 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 	return f
 }
 
-func exported(name string) bool {
-	r, _ := utf8.DecodeRuneInString(name)
-	return unicode.IsUpper(r)
-}
-
-func equal(n1, n2 string) bool {
-	// n1 must  be exported.
-	if !exported(n1) {
+func (f *File) match(name string) bool {
+	// name must  be exported.
+	if !ast.IsExported(name) {
 		return false
 	}
-	return strings.ToLower(n1) == strings.ToLower(n2)
+	if f.regexp == nil {
+		return strings.ToLower(name) == strings.ToLower(f.ident)
+	}
+	return f.regexp.MatchString(name)
 }
 
 func (f *File) printNode(node, ident ast.Node, url string) {
@@ -492,7 +511,7 @@ func (f *File) methodSet(set *types.MethodSet) {
 	methods := make([]method, 0, set.Len())
 	docs := make([]string, set.Len())
 	for i := 0; i < set.Len(); i++ {
-		if exported(set.At(i).Obj().Name()) {
+		if ast.IsExported(set.At(i).Obj().Name()) {
 			m := method{
 				i,
 				set.At(i),
