@@ -145,6 +145,10 @@ func main() {
 	default:
 		usage()
 	}
+	if strings.Contains(pkg, "/") {
+		fmt.Fprintf(os.Stderr, "doc: package name cannot contain slash (TODO)\n")
+		os.Exit(2)
+	}
 	for _, path := range paths(pkg) {
 		lookInDirectory(path, name)
 	}
