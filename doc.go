@@ -189,7 +189,7 @@ func pathsFor(root, pkg string) []string {
 	pkgPaths := make([]string, 0, 10)
 	visit := func(pathName string, f os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			return nil
 		}
 		// One package per directory. Ignore the files themselves.
 		if !f.IsDir() {
