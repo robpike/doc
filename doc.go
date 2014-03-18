@@ -316,7 +316,7 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 		Error: func(error) {},
 	}
 	info := &types.Info{
-		Objects: objects,
+		Uses: objects,
 	}
 	path := ""
 	var astFiles []*ast.File
@@ -342,6 +342,8 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 		}
 	}
 }
+
+var methodSetCache types.MethodSetCache
 
 // Visit implements the ast.Visitor interface.
 func (f *File) Visit(node ast.Node) ast.Visitor {
@@ -385,9 +387,9 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 						}
 					}
 					if f.doPrint && f.objs[spec.Name] != nil && f.objs[spec.Name].Type() != nil {
-						ms := f.objs[spec.Name].Type().MethodSet()
+						ms := methodSetCache.MethodSet(f.objs[spec.Name].Type())
 						if ms.Len() == 0 {
-							ms = types.NewPointer(f.objs[spec.Name].Type()).MethodSet()
+							ms = methodSetCache.MethodSet(types.NewPointer(f.objs[spec.Name].Type()))
 						}
 						f.methodSet(ms)
 					}
