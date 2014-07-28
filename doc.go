@@ -20,12 +20,24 @@
 // The pkg is the last element of the package path;
 // no slashes (ast.Node not go/ast.Node).
 //
+// The name may also be a regular expression to select which names
+// to match. In regular expression searches, case is ignored and
+// the pattern must match the entire name, so ".?print" will match
+// Print, Fprint and Sprint but not Fprintf.
+//
 // Flags
 //	-c(onst) -f(unc) -i(nterface) -m(ethod) -s(truct) -t(ype) -v(ar)
 // restrict hits to declarations of the corresponding kind.
 // Flags
 //	-doc -src -url
 // restrict printing to the documentation, source path, or godoc URL.
+// Flags
+//	-doc -src -url
+// restrict printing to the documentation, source path, or godoc URL.
+// Flag
+//	-r
+// takes a single argument (no package), a name or regular expression
+// to search for in all packages.
 package main
 
 import (
