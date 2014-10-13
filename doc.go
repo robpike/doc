@@ -262,6 +262,7 @@ const godocOrg = "http://godoc.org"
 // doPackage analyzes the single package constructed from the named files, looking for
 // the definition of ident.
 func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
+	fmt.Println("=========", pkg)
 	var files []*File
 	found := false
 	for name, astFile := range pkg.Files {
@@ -328,7 +329,7 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 		Error: func(error) {},
 	}
 	info := &types.Info{
-		Uses: objects,
+		Defs: objects,
 	}
 	path := ""
 	var astFiles []*ast.File
