@@ -38,7 +38,7 @@
 //	-r
 // takes a single argument (no package), a name or regular expression
 // to search for in all packages.
-package main
+package main // import "robpike.io/cmd/doc"
 
 import (
 	"bytes"
@@ -55,8 +55,8 @@ import (
 	"runtime"
 	"strings"
 
-	_ "code.google.com/p/go.tools/go/gcimporter"
-	"code.google.com/p/go.tools/go/types"
+	_ "golang.org/x/tools/go/gcimporter"
+	"golang.org/x/tools/go/types"
 )
 
 const usageDoc = `Find documentation for names.
