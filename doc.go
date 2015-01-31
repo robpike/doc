@@ -169,7 +169,7 @@ func main() {
 
 var slash = string(filepath.Separator)
 var slashDot = string(filepath.Separator) + "."
-var goRootSrcPkg = filepath.Join(runtime.GOROOT(), "src", "pkg")
+var goRootSrc = filepath.Join(runtime.GOROOT(), "src")
 var goRootSrcCmd = filepath.Join(runtime.GOROOT(), "src", "cmd")
 var goPaths = splitGopath()
 
@@ -285,9 +285,9 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 			}
 		}
 		switch {
-		case strings.HasPrefix(name, goRootSrcPkg):
+		case strings.HasPrefix(name, goRootSrc):
 			file.urlPrefix = "http://golang.org/pkg"
-			file.pathPrefix = goRootSrcPkg
+			file.pathPrefix = goRootSrc
 		case strings.HasPrefix(name, goRootSrcCmd):
 			file.urlPrefix = "http://golang.org/cmd"
 			file.pathPrefix = goRootSrcCmd
