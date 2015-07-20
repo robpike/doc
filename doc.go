@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Doc is an old program that was used to design a nice command-level
+// API for presenting Go documentation. It is deprecated; use the new
+// go doc in 1.5 instead.
+//
 // Doc is a simple document printer that produces the doc comments for its
 // argument symbols, plus a link to the full documentation and a pointer to
 // the source. It has a more Go-like UI than godoc. It can also search for
@@ -55,8 +59,11 @@ import (
 	"runtime"
 	"strings"
 
+	// TODO: Change this to use the new go/types. Can't do that
+	// until MethodSetCache is available in the new repository.
 	_ "golang.org/x/tools/go/gcimporter"
 	"golang.org/x/tools/go/types"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 const usageDoc = `Find documentation for names.
@@ -169,7 +176,7 @@ func main() {
 
 var slash = string(filepath.Separator)
 var slashDot = string(filepath.Separator) + "."
-var goRootSrc = filepath.Join(runtime.GOROOT(), "src")
+var goRootSrcPkg = filepath.Join(runtime.GOROOT(), "src", "pkg")
 var goRootSrcCmd = filepath.Join(runtime.GOROOT(), "src", "cmd")
 var goPaths = splitGopath()
 
@@ -285,9 +292,9 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 			}
 		}
 		switch {
-		case strings.HasPrefix(name, goRootSrc):
+		case strings.HasPrefix(name, goRootSrcPkg):
 			file.urlPrefix = "http://golang.org/pkg"
-			file.pathPrefix = goRootSrc
+			file.pathPrefix = goRootSrcPkg
 		case strings.HasPrefix(name, goRootSrcCmd):
 			file.urlPrefix = "http://golang.org/cmd"
 			file.pathPrefix = goRootSrcCmd
@@ -355,7 +362,7 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 	}
 }
 
-var methodSetCache types.MethodSetCache
+var methodSetCache typeutil.MethodSetCache
 
 // Visit implements the ast.Visitor interface.
 func (f *File) Visit(node ast.Node) ast.Visitor {
