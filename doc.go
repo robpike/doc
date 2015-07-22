@@ -57,6 +57,7 @@ import (
 
 	_ "golang.org/x/tools/go/gcimporter"
 	"golang.org/x/tools/go/types"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 const usageDoc = `Find documentation for names.
@@ -355,7 +356,7 @@ func doPackage(pkg *ast.Package, fset *token.FileSet, ident string) {
 	}
 }
 
-var methodSetCache types.MethodSetCache
+var methodSetCache typeutil.MethodSetCache
 
 // Visit implements the ast.Visitor interface.
 func (f *File) Visit(node ast.Node) ast.Visitor {
